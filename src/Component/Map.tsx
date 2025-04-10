@@ -199,6 +199,7 @@ useEffect(() => {
     setNewName(event.target.value);
   };
   const handleBlurOrEnter = (playerId: string) => {
+      console.log(playerId);
     if (editingPlayerId && newName.trim()) {
       const updatedPlayer = { 
         ...myPlayer!, 
