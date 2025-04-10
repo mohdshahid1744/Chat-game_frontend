@@ -554,19 +554,24 @@ const ChatBox: React.FC<ChatBoxProps> = ({ currentUsername,refreshChatList,curre
       
       
       
-      useEffect(() => {
+          useEffect(() => {
         socket.on('message received', (newMessage) => {
-          console.log("Message received:", newMessage);
-          
-          if (!messages.some(msg => msg._id === newMessage._id)) {
-              setMessages((prevMessages) => [...prevMessages, newMessage]);
-          }
-      });
-      
+            console.log("Message received:", newMessage);
+    
+            if (newMessage.chat !== selectedChat?._id) {
+                console.log("New message for another chat");
+                return;
+            }
+    
+            if (!messages.some(msg => msg._id === newMessage._id)) {
+                setMessages((prevMessages) => [...prevMessages, newMessage]);
+            }
+        });
+    
         return () => {
             socket.off('message received');
         };
-    }, [socket]);
+    }, [socket, selectedChat?._id, messages]);
   
       const handleSendMessage = async () => {
         if (!message.trim() || !selectedChat) return;
