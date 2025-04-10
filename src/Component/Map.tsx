@@ -6,13 +6,13 @@ import clsx from "clsx";
 import axiosInstance from "../utils/Axios/Axios";
 
 const amongUsColors: Record<string, string> = {
-    RubyGlow: "from-rose-500 via-red-500 to-orange-500 shadow-red-700", // 💎 Ruby Glow
-    SapphireWave: "from-blue-400 via-indigo-500 to-purple-500 shadow-indigo-700", // 💙 Sapphire Wave
-    EmeraldFlash: "from-green-400 via-teal-500 to-cyan-500 shadow-teal-700", // 💚 Emerald Flash
-    GoldenSunrise: "from-yellow-400 via-amber-500 to-orange-600 shadow-amber-700", // 🌅 Golden Sunrise
-    AmethystDream: "from-purple-400 via-violet-500 to-fuchsia-500 shadow-violet-700", // 💜 Amethyst Dream
-    Sunset: "from-pink-500 via-orange-500 to-yellow-500 shadow-orange-700", // 🌇 Sunset Gradient
-    Ocean: "from-cyan-500 via-blue-500 to-indigo-600 shadow-blue-700", // 🌊 Ocean Gradient
+    RubyGlow: "from-rose-500 via-red-500 to-orange-500 shadow-red-700", 
+    SapphireWave: "from-blue-400 via-indigo-500 to-purple-500 shadow-indigo-700", 
+    EmeraldFlash: "from-green-400 via-teal-500 to-cyan-500 shadow-teal-700", 
+    GoldenSunrise: "from-yellow-400 via-amber-500 to-orange-600 shadow-amber-700", 
+    AmethystDream: "from-purple-400 via-violet-500 to-fuchsia-500 shadow-violet-700",
+    Sunset: "from-pink-500 via-orange-500 to-yellow-500 shadow-orange-700", 
+    Ocean: "from-cyan-500 via-blue-500 to-indigo-600 shadow-blue-700", 
   };
   
   
@@ -71,15 +71,23 @@ interface Player {
     color: string;
     outfit: string;
   }
-  interface Chat {
+  type Participant = {
+    username: string;
+    socketId: string;
     _id: string;
-    participants: string[];
+  };
+  
+  type Chat = {
+    _id: string;
+    participants: Participant[];
     createdAt: string;
     updatedAt: string;
-  }
+  };
+  
   
   interface ChatBoxProps {
     currentUsername: string | null;
+    currentUser: string | null;
     refreshChatList: boolean; // 👈 Add this
   }
   interface MapProps {
@@ -147,16 +155,23 @@ useEffect(() => {
         myPlayer 
       ) {
         try {
-          const res = await axiosInstance.post(`/chat`, {
-            user1: myPlayer.name,
-            user2: nearbyPlayer.name
-          });
+            const res = await axiosInstance.post(`/chat`, {
+                user1: {
+                  username: myPlayer.name,
+                  socketId: socket.id
+                },
+                user2: {
+                  username: nearbyPlayer.name,
+                  socketId: nearbyPlayer.id
+                }
+              });
+              
   
           console.log("Chat created:", res);
           onNewChat?.(); 
           socket.emit("chat created", {
-            user1: myPlayer.name,
-            user2: nearbyPlayer.name
+            user1: myPlayer.id,
+            user2: nearbyPlayer.id
           });
         } catch (err) {
           console.error("Chat creation error:", err);
@@ -178,6 +193,7 @@ useEffect(() => {
       setNewName(currentName);
     }
   };
+  
   
   const handleNameChange = (event: React.ChangeEvent<HTMLInputElement>) => {
     setNewName(event.target.value);
@@ -406,16 +422,18 @@ useEffect(() => {
   );
 };
 
-const ChatBox: React.FC<ChatBoxProps> = ({ currentUsername,refreshChatList }) => {
+const ChatBox: React.FC<ChatBoxProps> = ({ currentUsername,refreshChatList,currentUser }) => {
     const [chatList, setChatList] = useState<Chat[]>([]);
     const [selectedChat, setSelectedChat] = useState<Chat | null>(null);
     const [otherUser, setOtherUser] = useState<string | null>(null);
+    const [opponentSocketId, setOpponentSocketId] = useState<string | null>(null);
+
     const [message, setMessage] = useState("");
     const [messages, setMessages] = useState<Message[]>([]);
     const [opponentLeft, setOpponentLeft] = useState(false);
     const [expandedChatId, setExpandedChatId] = useState<string | null>(null);
     const [isChatEnded, setIsChatEnded] = useState(false);
-    const [unreadCounts, setUnreadCounts] = useState({});
+  
 
     useEffect(() => {
         if (selectedChat?._id) {
@@ -446,28 +464,31 @@ const ChatBox: React.FC<ChatBoxProps> = ({ currentUsername,refreshChatList }) =>
 
       const fetchChats = async () => {
         try {
-            const res = await axiosInstance.get(`/chatList/${currentUsername}`);
-            if (res.data.success) {
-              console.log("Fetched chats:", res.data.chats);
-              setChatList(prev => {
-                const isDifferent = JSON.stringify(prev) !== JSON.stringify(res.data.chats);
-                console.log("Chat list changed?", isDifferent);
-                return [...res.data.chats];
-              });
-            }
-            
+          const res = await axiosInstance.get(`/chatList/${currentUsername}`);
+          console.log("Fetched",res.data.chats);
+          
+          if (res.data.success) {
+            setChatList([...res.data.chats]);
+          }
         } catch (error) {
           console.error("Error fetching chat list", error);
         }
       };
+      
             
     
  
   
     const handleChatClick = (chat: Chat) => {
-        const other = chat.participants.find(p => p !== currentUsername);
+        const other = chat.participants.find(p => p.socketId !== currentUsername);        
+        console.log("chatttttttttt",other);
+        
         setSelectedChat(chat);
-        setOtherUser(other || null);
+        setOtherUser(other?.username || null);
+        setOpponentSocketId(other?.socketId || null );
+        console.log("opponent socket",opponentSocketId);
+        
+        
       
         if (socket && chat._id) {
           socket.emit("join chat", chat._id); 
@@ -477,12 +498,22 @@ const ChatBox: React.FC<ChatBoxProps> = ({ currentUsername,refreshChatList }) =>
         const handleChatListUpdate = (data: any) => {
           console.log("chat list update received", data);
       
-          if (data.user1 === currentUsername || data.user2 === currentUsername) {
-            fetchChats();
-          }
+          const involvesCurrentUser = 
+            data.user1 === currentUsername || data.user2 === currentUsername;
       
-          if (data.reason === "player left") {
+          if (involvesCurrentUser) {
             fetchChats();
+      
+            if (
+              selectedChat &&
+              selectedChat.participants.some(p => 
+                [data.user1, data.user2].includes(p.socketId)
+              )
+            ) {
+              setSelectedChat(null);
+              setOtherUser(null);
+              setMessages([]);
+            }
           }
         };
       
@@ -491,7 +522,8 @@ const ChatBox: React.FC<ChatBoxProps> = ({ currentUsername,refreshChatList }) =>
         return () => {
           socket.off("chat list update", handleChatListUpdate);
         };
-      }, [currentUsername]);
+      }, [selectedChat, currentUsername]);
+      
 
       
       
@@ -541,7 +573,7 @@ const ChatBox: React.FC<ChatBoxProps> = ({ currentUsername,refreshChatList }) =>
         try {
           const response = await axiosInstance.post("/sendmessage", {
             chatId: selectedChat._id,
-            username: currentUsername,
+            socketId: currentUsername,
             message: message
           });
       console.log("TESDA",response)
@@ -555,11 +587,16 @@ const ChatBox: React.FC<ChatBoxProps> = ({ currentUsername,refreshChatList }) =>
         }
       };
       
-      const handleEndChat = (chatId: string, opponent: string) => {
-        socket.emit("end chat", { chatId, opponent });
+      const handleEndChat = (chatId: string, opponentPlayerId: string) => {
+        socket.emit("end chat", { chatId, opponentPlayerId });
+      
         setChatList(prev => prev.filter(chat => chat._id !== chatId));
         setIsChatEnded(true);
       };
+      
+      
+      
+      
       
      
       useEffect(() => {
@@ -584,6 +621,7 @@ const ChatBox: React.FC<ChatBoxProps> = ({ currentUsername,refreshChatList }) =>
           socket.off("chat ended");
         };
       }, []);
+      
       
     return (
         <div className="w-[35%] h-screen bg-gray-900 text-white flex flex-col border-l border-gray-700">
@@ -632,20 +670,20 @@ const ChatBox: React.FC<ChatBoxProps> = ({ currentUsername,refreshChatList }) =>
         expandedChatId === selectedChat._id ? 'max-w-[100px]' : 'max-w-0'
       }`}
     >
-      {!isChatEnded && (
+      {!isChatEnded && opponentSocketId && (
         <button
-          onClick={() => handleEndChat(selectedChat._id, otherUser)}
-          className="ml-2 text-sm px-2 py-1 text-red-500 border border-red-500 rounded hover:bg-red-500 hover:text-white transition whitespace-nowrap"
+            onClick={() => handleEndChat(selectedChat._id, opponentSocketId)}
+            className="ml-2 text-sm px-2 py-1 text-red-500 border border-red-500 rounded hover:bg-red-500 hover:text-white transition whitespace-nowrap"
         >
-          End Chat
+            End Chat
         </button>
-      )}
+        )}
+
     </div>
 </div>
 
 
       
-            {/* Message area */}
             <div className="flex-1 overflow-y-auto p-4">
             {messages.length === 0 ? (
                 <p className="text-gray-400 text-sm italic">No messages yet...</p>
@@ -703,41 +741,37 @@ const ChatBox: React.FC<ChatBoxProps> = ({ currentUsername,refreshChatList }) =>
           <div className="p-4 text-gray-400">No chats found</div>
         ) : (
             
-          chatList.map((chat) => {
-            const other = chat.participants.find(p => p !== currentUsername);
-        
-              if (!other) return null;
-              
-              
-              
-            return (
-                <div
-                key={chat._id}
-                className="flex items-center justify-between px-4 py-3 border-b border-gray-700 bg-gray-800 hover:bg-gray-700 overflow-hidden"
-                >
-                <div
-                    onClick={() => handleChatClick(chat)}
-                    className="flex items-center gap-4 cursor-pointer"
-                >
-                    <div className="relative w-10 h-10">
-                    <img
-                        src={`https://api.dicebear.com/7.x/bottts-neutral/svg?seed=${other}`}
-                        alt={other}
-                        className="w-10 h-10 rounded-full border border-gray-700"
-                    />
-                    <span className="absolute bottom-0 right-0 w-3 h-3 bg-green-500 border-2 border-gray-900 rounded-full"></span>
-                    </div>
-                    <div>
-                    <div className="font-medium">{other}</div>
-                    <div className="text-sm text-gray-400">Last seen recently</div>
-                    </div>
-                </div>
+            chatList.map((chat) => {
+                const other = chat.participants.find((p) => p.username !== currentUser);
 
-                
-                </div>
-
-              );
-          })
+              
+                if (!other) return null;
+              
+                return (
+                  <div
+                    key={chat._id}
+                    className="flex items-center justify-between px-4 py-3 border-b border-gray-700 bg-gray-800 hover:bg-gray-700 overflow-hidden"
+                  >
+                    <div
+                      onClick={() => handleChatClick(chat)}
+                      className="flex items-center gap-4 cursor-pointer"
+                    >
+                      <div className="relative w-10 h-10">
+                        <img
+                          src={`https://api.dicebear.com/7.x/bottts-neutral/svg?seed=${other.username}`}
+                          alt={other.username}
+                          className="w-10 h-10 rounded-full border border-gray-700"
+                        />
+                        <span className="absolute bottom-0 right-0 w-3 h-3 bg-green-500 border-2 border-gray-900 rounded-full"></span>
+                      </div>
+                      <div>
+                        <div className="font-medium">{other.username}</div>
+                        <div className="text-sm text-gray-400">Last seen recently</div>
+                      </div>
+                    </div>
+                  </div>
+                );
+              })
         )}
       </div>
     );
@@ -745,8 +779,24 @@ const ChatBox: React.FC<ChatBoxProps> = ({ currentUsername,refreshChatList }) =>
   
 
 const GameWithChat: React.FC = () => {
-    const currentUsername = localStorage.getItem("playerName");
+    const currentUser = localStorage.getItem("playerName");
     const [refreshChatList, setRefreshChatList] = useState(false);
+    const [currentUsername, setCurrentUserId] = useState<string | null>(null);
+    useEffect(() => {
+        const handleConnect = () => {
+          setCurrentUserId(socket.id ?? null); 
+        };
+    
+        if (socket.connected && socket.id) {
+          setCurrentUserId(socket.id);
+        } else {
+          socket.on("connect", handleConnect);
+        }
+    
+        return () => {
+          socket.off("connect", handleConnect);
+        };
+      }, []);
 
   return (
     <div className="flex h-screen">
@@ -756,8 +806,10 @@ const GameWithChat: React.FC = () => {
        <ChatBox 
         currentUsername={currentUsername} 
         refreshChatList={refreshChatList}
+        currentUser={currentUser}
       />    </div>
   );
 };
 
 export default GameWithChat;
+
